@@ -11,6 +11,7 @@ from users.service import UsersService
 from remnawave.service import RemnawaveService
 from settings.service import SettingsService
 from subscriptions.service import SubscriptionsService
+from shared.utils.subscription import get_subscription
 
 
 router = APIRouter(prefix="/sub", tags=["subscriptions"])
@@ -43,7 +44,5 @@ async def get_provider_name(
 @router.get("/{short_uuid}")
 async def get(
     short_uuid: str,
-    subscription_service: SubscriptionsService = Depends(
-        get_subscription_service)
 ) -> Response:
-    return await subscription_service.get(short_uuid)
+    return await get_subscription(short_uuid)

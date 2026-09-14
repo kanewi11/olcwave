@@ -1,22 +1,15 @@
-import asyncio
-import secrets
-from typing import Any
-
-import emoji
 import yaml
+import emoji
+import secrets
+from typing import Any, Tuple
 
 from fastapi import Response
 
-from core.config import settings
 from olcrtc.sdk import OlcRTCClient
-from settings.service import SettingsService
-from users.schemas import TrafficInfoSchema, UserSchema
+from users.schemas import TrafficInfoSchema
 from profiles.roomGenerator import RoomChecker, RoomGenerator
 from profiles.service import ContainersService
-from profiles.service import ProfilesService
 from settings.service import SettingsService
-from remnawave.service import RemnawaveService
-from users.service import UsersService
 
 
 TRANSPORT_NAMES = {
@@ -64,17 +57,11 @@ def bytes_to_notation(num: float):
 class SubscriptionsService:
     def __init__(
         self,
-        remnawave_service: RemnawaveService,
-        users_service: UsersService,
         settings_service: SettingsService,
-        profiles_service: ProfilesService,
         containers_service: ContainersService,
         olcrtc_client: OlcRTCClient,
     ) -> None:
-        self._remnawave_service = remnawave_service
-        self._users_service = users_service
         self._settings_service = settings_service
-        self._profiles_service = profiles_service
         self._containers_service = containers_service
         self._olcrtc_client = olcrtc_client
 
@@ -147,11 +134,10 @@ class SubscriptionsService:
 
         return f"<{params}>"
 
-    @staticmethod
-    def config_to_uri(config: str, name: str) -> str:
+    def config_to_uri(self, config: str, name: str) -> str:
         cfg = yaml.safe_load(config)
 
-        options = SubscriptionsService.build_transport_options(cfg)
+        options = self.build_transport_options(cfg)
 
         return (
             f"olcrtc://{cfg['auth']['provider']}?"
@@ -182,7 +168,7 @@ class SubscriptionsService:
         name: str,
         used: int = 0,
         limit: int = 0,
-    ):
+    ) -> str:
         txt = (
             f"#name: {name}\n"
             f"#update: 2147483647\n"
@@ -201,7 +187,7 @@ class SubscriptionsService:
         for uri in uris:
             name = uri[uri.find("$") + 1:]
 
-            name, icon = SubscriptionsService.remove_last_emoji(name)
+            name, icon = self.remove_last_emoji(name)
 
             txt += (
                 f"{uri}\n"
@@ -213,7 +199,7 @@ class SubscriptionsService:
 
         return txt
 
-    async def _cleanup_user_containers(self, short_uuid: str):
+    async def remove_user_containers(self, short_uuid: str):
         for container in await self._olcrtc_client.all(True):
             info = await container.show()
             name = info["Name"].lstrip("/")
@@ -223,28 +209,6 @@ class SubscriptionsService:
                 and name.endswith(f"-{short_uuid}")
             ):
                 await self._olcrtc_client.remove(name)
-
-    async def _validate_rw_user(self, short_uuid: str) -> Any | None:
-        rw_user = await self._remnawave_service.get_subscription_info(short_uuid)
-        if rw_user:
-            return rw_user
-        return None
-
-    async def _ensure_local_user_from_rw(
-        self,
-        short_uuid: str,
-        rw_user: Any
-    ) -> None:
-        try:
-            await self._users_service.get(short_uuid)
-        except Exception:
-            await self._users_service.add(
-                UserSchema(
-                    short_uuid=short_uuid,
-                    name=rw_user.user.username,
-                    expires_at=rw_user.user.expires_at,
-                )
-            )
 
     def traffic_limit_response(self, traffic: TrafficInfoSchema):
         traffic_uri = (
@@ -265,117 +229,44 @@ class SubscriptionsService:
             media_type="text/plain",
         )
 
-    async def ensure_profiles_running(self, short_uuid: str):
+    async def load_config(self, tag: str, short_uuid: str) -> Tuple[Any, str]:
+        container_name = f"olcwave-{tag}-{short_uuid}"
+        config = await self._olcrtc_client.get_config(container_name)
 
-        running_tags = await self.get_launched_tags(short_uuid)
+        if isinstance(config, bytes):
+            config = config.decode()
+        return tag, config
 
-        async def load_config(tag):
+    async def check_profile(
+        self,
+        tag: str,
+        short_uuid: str,
+        config: str
+    ) -> None:
+        obj = yaml.safe_load(config)
+        provider = obj["auth"]["provider"]
 
-            container_name = f"olcwave-{tag}-{short_uuid}"
-            config = await self._olcrtc_client.get_config(
-                container_name
+        if provider in ("telemost", "wbstream"):
+            exists = await RoomChecker.check_room_id(
+                provider,
+                obj["room"]["id"],
+                obj["auth"].get("token", ""),
             )
 
-            if isinstance(config, bytes):
-                config = config.decode()
-            return tag, config
+            if not exists:
+                await self._olcrtc_client.remove(f"olcwave-{tag}-{short_uuid}")
 
-        loaded = await asyncio.gather(
-            *(load_config(tag) for tag in running_tags)
-        )
-
-        configs = dict(loaded)
-
-        async def check_profile(tag, config):
-
-            obj = yaml.safe_load(config)
-
-            provider = obj["auth"]["provider"]
-
-            if provider in ("telemost", "wbstream"):
-
-                exists = await RoomChecker.check_room_id(
-                    provider,
-                    obj["room"]["id"],
-                    obj["auth"].get("token", ""),
-                )
-
-                if not exists:
-                    await self._olcrtc_client.remove(
-                        f"olcwave-{tag}-{short_uuid}"
-                    )
-
-        await asyncio.gather(
-            *(check_profile(tag, cfg)
-              for tag, cfg in configs.items())
-        )
-
-        profiles_list = await self._profiles_service.get_all()
-
-        profiles = {
-            profile.tag: profile
-            for profile in profiles_list
-        }
-
-        missing = profiles.keys() - configs.keys()
-
-        async def start_profile(tag):
-            config = await SubscriptionsService.profile_to_config(
-                profiles[tag].profile
-            )
-
-            configs[tag] = config
-
-            await self._containers_service.run(
-                config,
-                tag,
-                short_uuid,
-            )
-
-        await asyncio.gather(
-            *(start_profile(tag) for tag in missing)
-        )
-
-        return configs, profiles
-
-    async def get(self, short_uuid: str):
-        if settings.RW_ENABLED:
-            rw_user = await self._validate_rw_user(short_uuid)
-            if rw_user is None:
-                await self._cleanup_user_containers(short_uuid)
-                return Response(status_code=404)
-
-            await self._ensure_local_user_from_rw(short_uuid, rw_user)
-        else:
-            try:
-                await self._users_service.get(short_uuid)
-            except Exception:
-                return Response(status_code=404)
-
-        traffic = await self._users_service.get_traffic(short_uuid)
-        if traffic.exceeded:
-            return self.traffic_limit_response(
-                traffic
-            )
-
-        configs, profiles = await self.ensure_profiles_running(
-            short_uuid
-        )
-
-        uris = [
-            self.config_to_uri(
-                configs[tag],
-                profiles[tag].name,
-            )
-            for tag in profiles
-        ]
-
-        return Response(
-            content=self.prepare_sub_text(
-                uris,
-                self._settings_service.get().sub_name,
-                traffic.used,
-                traffic.limit,
-            ),
-            media_type="text/plain",
+    async def start_profile(
+        self,
+        tag: str,
+        short_uuid: str,
+        profiles: dict,
+        configs: dict,
+    ) -> None:
+        config = await self.profile_to_config(profiles[tag].profile)
+        configs[tag] = config
+        await self._containers_service.run(
+            config,
+            tag,
+            short_uuid,
         )

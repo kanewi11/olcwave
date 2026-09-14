@@ -1,11 +1,10 @@
 import json
-from functools import lru_cache
 
 import yaml
 from aiodocker import Docker, DockerError
 from aiodocker.containers import DockerContainer
 
-from utils.docker_client import docker_client, DockerClient
+from shared.utils.docker_client import DockerClient
 
 
 class OlcRTCClient:

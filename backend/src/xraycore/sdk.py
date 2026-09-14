@@ -3,7 +3,7 @@ import tarfile
 
 from aiodocker import Docker, DockerError
 from aiodocker.containers import DockerContainer
-from utils.docker_client import DockerClient
+from shared.utils.docker_client import DockerClient
 
 
 class XrayCoreClient:
