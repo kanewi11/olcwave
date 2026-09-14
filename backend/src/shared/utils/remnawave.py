@@ -10,24 +10,7 @@ from users.service import UsersService
 logger = logging.getLogger(__name__)
 
 
-def parse_interval(value: str) -> int:
-    m = re.fullmatch(r"(\d+)([smh])", value)
-    if not m:
-        raise ValueError(
-            f"Invalid interval format: {value!r}. "
-            r"Expected format: number + unit (e.g. 30s, 10m, 4h)"
-        )
-
-    num = int(m.group(1))
-    if num <= 0:
-        raise ValueError(f"Interval must be positive, got {num}")
-
-    unit = m.group(2)
-    multipliers = {"s": 1, "m": 60, "h": 3600}
-    return num * multipliers[unit]
-
-
-class SyncManager:
+class RemnawaveSyncManager:
     _task: asyncio.Task | None = None
 
     def __init__(
@@ -52,7 +35,7 @@ class SyncManager:
 
             try:
                 interval_str = self._settings_service.get().sync_interval
-                interval = parse_interval(interval_str)
+                interval = self.parse_interval(interval_str)
             except Exception as e:
                 print(e)
                 interval = 3600
@@ -60,9 +43,9 @@ class SyncManager:
             await asyncio.sleep(interval)
 
     def start(self) -> None:
-        if SyncManager._task is not None:
+        if self._task is not None:
             return
-        SyncManager._task = asyncio.create_task(self._run())
+        self._task = asyncio.create_task(self._run())
 
     async def stop(self) -> None:
         if self._task is None:
@@ -73,3 +56,20 @@ class SyncManager:
         except asyncio.CancelledError:
             pass
         self._task = None
+
+    @staticmethod
+    def parse_interval(value: str) -> int:
+        m = re.fullmatch(r"(\d+)([smh])", value)
+        if not m:
+            raise ValueError(
+                f"Invalid interval format: {value!r}. "
+                r"Expected format: number + unit (e.g. 30s, 10m, 4h)"
+            )
+
+        num = int(m.group(1))
+        if num <= 0:
+            raise ValueError(f"Interval must be positive, got {num}")
+
+        unit = m.group(2)
+        multipliers = {"s": 1, "m": 60, "h": 3600}
+        return num * multipliers[unit]
