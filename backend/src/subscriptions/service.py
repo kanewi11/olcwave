@@ -12,49 +12,38 @@ from profiles.service import ContainersService
 from settings.service import SettingsService
 
 
-TRANSPORT_NAMES = {
-    "vp8channel": "vp8",
-    "seichannel": "sei",
-    "videochannel": "video",
-}
-
-TRANSPORT_OPTIONS = {
-    "vp8": {
-        "fps": "vp8-fps",
-        "batch_size": "vp8-batch",
-    },
-    "sei": {
-        "fps": "fps",
-        "batch_size": "batch",
-        "fragment_size": "frag",
-        "ack_timeout_ms": "ack-ms",
-    },
-    "video": {
-        "width": "video-w",
-        "height": "video-h",
-        "fps": "video-fps",
-        "bitrate": "video-bitrate",
-        "hw": "video-hw",
-        "codec": "video-codec",
-        "qr_size": "video-qr-size",
-        "qr_recovery": "video-qr-recovery",
-        "tile_module": "video-tile-module",
-        "tile_rs": "video-tile-rs",
-    },
-}
-
-
-def bytes_to_notation(num: float):
-    notations = ["b", "kb", "mb", "gb", "tb"]
-    ptr = 0
-    while num > 1000 and ptr < len(notations) - 1:
-        num /= 1000
-        ptr += 1
-
-    return f"{int(num)}{notations[ptr]}"
-
-
 class SubscriptionsService:
+    TRANSPORT_NAMES = {
+        "vp8channel": "vp8",
+        "seichannel": "sei",
+        "videochannel": "video",
+    }
+
+    TRANSPORT_OPTIONS = {
+        "vp8": {
+            "fps": "vp8-fps",
+            "batch_size": "vp8-batch",
+        },
+        "sei": {
+            "fps": "fps",
+            "batch_size": "batch",
+            "fragment_size": "frag",
+            "ack_timeout_ms": "ack-ms",
+        },
+        "video": {
+            "width": "video-w",
+            "height": "video-h",
+            "fps": "video-fps",
+            "bitrate": "video-bitrate",
+            "hw": "video-hw",
+            "codec": "video-codec",
+            "qr_size": "video-qr-size",
+            "qr_recovery": "video-qr-recovery",
+            "tile_module": "video-tile-module",
+            "tile_rs": "video-tile-rs",
+        },
+    }
+
     def __init__(
         self,
         settings_service: SettingsService,
@@ -118,20 +107,18 @@ class SubscriptionsService:
             config["room"]["id"] = "/".join(room_url)
         return yaml.dump(config)
 
-    @staticmethod
-    def build_transport_options(cfg: dict) -> str:
+    def build_transport_options(self, cfg: dict) -> str:
         transport = cfg["net"]["transport"]
 
         if transport == "datachannel":
             return ""
 
-        short = TRANSPORT_NAMES[transport]
+        short = self.TRANSPORT_NAMES[transport]
 
         params = "&".join(
-            f"{TRANSPORT_OPTIONS[short][k]}={v}"
+            f"{self.TRANSPORT_OPTIONS[short][k]}={v}"
             for k, v in cfg[short].items()
         )
-
         return f"<{params}>"
 
     def config_to_uri(self, config: str, name: str) -> str:
@@ -175,13 +162,13 @@ class SubscriptionsService:
             f"#refresh: {self._settings_service.get().sub_update_interval}\n"
         )
         if limit == 0:
-            txt += f"#used: {bytes_to_notation(used)}\n"
+            txt += f"#used: {self.bytes_to_notation(used)}\n"
         else:
             txt += (
-                f"#used: {bytes_to_notation(used)}/"
-                f"{bytes_to_notation(limit)}\n"
+                f"#used: {self.bytes_to_notation(used)}/"
+                f"{self.bytes_to_notation(limit)}\n"
                 f"#available: "
-                f"{bytes_to_notation(limit-used)}\n\n"
+                f"{self.bytes_to_notation(limit-used)}\n\n"
             )
 
         for uri in uris:
@@ -270,3 +257,13 @@ class SubscriptionsService:
             tag,
             short_uuid,
         )
+
+    @staticmethod
+    def bytes_to_notation(num: float):
+        notations = ["b", "kb", "mb", "gb", "tb"]
+        ptr = 0
+        while num > 1000 and ptr < len(notations) - 1:
+            num /= 1000
+            ptr += 1
+
+        return f"{int(num)}{notations[ptr]}"
