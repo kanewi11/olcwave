@@ -14,8 +14,8 @@ from profiles.service import ProfilesService
 from profiles.repository import ProfileRepository
 from olcrtc.service import ContainersService
 from shared.utils.traffic import TrafficManager
-from shared.utils.remnawave import RemnawaveSyncManager
 from shared.utils.docker_client import docker_client
+from shared.utils.remnawave import RemnawaveSyncManager
 from xraycore.sdk import XrayCoreClient
 from olcrtc.sdk import OlcRTCClient
 
@@ -67,13 +67,13 @@ def get_users_service() -> UsersService:
     return UsersService(
         repo=UserRepository(),
         settings_service=get_settings_service(),
-        remnawave_service=get_remnawave_service(),
     )
 
 
 @lru_cache
-def get_sync_manager() -> RemnawaveSyncManager:
+def get_remnawave_sync_manager() -> RemnawaveSyncManager:
     return RemnawaveSyncManager(
+        remnawave_service=get_remnawave_service(),
         users_service=get_users_service(),
         settings_service=get_settings_service(),
     )

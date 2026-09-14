@@ -1,10 +1,6 @@
-from datetime import datetime, timezone
-
 from fastapi import HTTPException, status
 
-from core.config import settings
 from settings.service import SettingsService
-from remnawave.service import RemnawaveService
 from users.repository import UserRepository
 from users.schemas import UserSchema, TrafficInfoSchema
 
@@ -14,11 +10,9 @@ class UsersService:
         self,
         repo: UserRepository,
         settings_service: SettingsService,
-        remnawave_service: RemnawaveService,
     ) -> None:
         self._repo = repo
         self._settings_service = settings_service
-        self._remnawave_service = remnawave_service
 
     async def add(self, user: UserSchema) -> UserSchema:
         new_user = await self._repo.add_user(user.model_dump())
@@ -77,63 +71,3 @@ class UsersService:
         if delta <= 0:
             return
         await self._repo.update_traffic_used(short_uuid, delta)
-
-    async def sync_with_remnawave(self) -> dict[str, int]:
-        if not settings.RW_ENABLED:
-            raise RuntimeError("Remnawave is not enabled")
-
-        rw_users = await self._remnawave_service.get_all_users()
-        db_users = await self.get_all()
-
-        rw_map = {
-            u.short_uuid: u
-            for u in rw_users.users
-            if self._remnawave_service.is_user_in_squad(u)
-        }
-
-        db_map = {u.short_uuid: u for u in db_users}
-
-        created = 0
-        updated = 0
-        deleted = 0
-
-        for short_uuid, rw_user in rw_map.items():
-            if short_uuid not in db_map:
-                await self.add(
-                    UserSchema(
-                        short_uuid=rw_user.short_uuid,
-                        name=rw_user.username,
-                        expires_at=rw_user.expire_at,
-                    )
-                )
-                created += 1
-            else:
-                db_user = db_map[short_uuid]
-
-                if (
-                    db_user.expires_at != rw_user.expire_at
-                    or db_user.name != rw_user.username
-                ):
-                    updated_user = db_user.model_copy(
-                        update={
-                            "name": rw_user.username,
-                            "expires_at": rw_user.expire_at,
-                        }
-                    )
-
-                    await self.update(updated_user)
-
-                    updated += 1
-
-        for short_uuid in db_map:
-            if short_uuid not in rw_map:
-                await self.delete(short_uuid)
-                deleted += 1
-
-        await self._settings_service.update_last_sync(datetime.now(timezone.utc))
-
-        return {
-            "created": created,
-            "updated": updated,
-            "deleted": deleted,
-        }

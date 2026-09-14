@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Depends
 
 from auth.dependencies import get_current_admin
 from core.config import settings
-from core.factories import get_users_service
+from core.factories import get_users_service, get_remnawave_sync_manager
 from users.service import UsersService
 from users.schemas import UserSchema, TrafficInfoSchema, TrafficLimitUpdate
-
+from shared.utils.remnawave import RemnawaveSyncManager
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -87,9 +87,10 @@ async def reset_traffic(
 @router.post("/sync")
 async def sync_from_remnawave(
     _admin: dict = Depends(get_current_admin),
-    users_service: UsersService = Depends(get_users_service)
+    remnawave_sync_manager: RemnawaveSyncManager = Depends(
+        get_remnawave_sync_manager),
 ) -> dict[str, int]:
     if not settings.RW_ENABLED:
         raise HTTPException(status_code=400, detail="Remnawave is not enabled")
-    res = await users_service.sync_with_remnawave()
+    res = await remnawave_sync_manager.sync_remnawave_users()
     return res

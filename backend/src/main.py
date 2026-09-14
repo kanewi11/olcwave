@@ -20,10 +20,9 @@ from users.router import router as users_router
 from subscriptions.router import router as subscriptions_router
 from olcrtc.router import router as containers_router
 from routing.router import router as routing_router
-from shared.utils.remnawave import RemnawaveSyncManager
 from core.config import settings
 from core.factories import (
-    get_sync_manager,
+    get_remnawave_sync_manager,
     get_settings_service,
     get_traffic_manager,
     get_routing_service,
@@ -31,6 +30,7 @@ from core.factories import (
 )
 from db.base import create_tables
 from shared.utils.traffic import TrafficManager
+from shared.utils.remnawave import RemnawaveSyncManager
 from shared.utils.docker_client import docker_client
 
 
@@ -40,7 +40,7 @@ async def lifespan(
     routing_service: RoutingService = get_routing_service(),
     settings_service: SettingsService = get_settings_service(),
     traffic_manager: TrafficManager = get_traffic_manager(),
-    sync_manager: RemnawaveSyncManager = get_sync_manager(),
+    sync_manager: RemnawaveSyncManager = get_remnawave_sync_manager(),
 ):
     await create_tables()
     docker = docker_client.client
